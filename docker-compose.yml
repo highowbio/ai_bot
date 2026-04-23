@@ -1,0 +1,13 @@
+services:
+  bot:
+    build: .
+    image: ai_bot:latest
+    container_name: ai_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - bot_data:/app/data
+
+volumes:
+  bot_data:
