@@ -49,6 +49,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS or ["*"],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Decode-Status", "X-Filename"],
     allow_credentials=False,
 )
 
