@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 
 from telegram import (
@@ -68,11 +69,11 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     m = update.effective_message
     if not u or not m:
         return
-    username = f"@{u.username}" if u.username else "—"
+    username = f"@{html.escape(u.username)}" if u.username else "—"
     await m.reply_text(
         "🆔 <b>Ваш профиль</b>\n"
         f"<b>ID:</b> <code>{u.id}</code>\n"
-        f"<b>Имя:</b> {u.full_name}\n"
+        f"<b>Имя:</b> {html.escape(u.full_name)}\n"
         f"<b>Username:</b> {username}",
         parse_mode=ParseMode.HTML,
     )
