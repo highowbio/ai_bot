@@ -1,69 +1,102 @@
-# AI Bot · декодер конфигов
+# AI Bot · декодер конфигов (Telegram Mini App)
 
-Telegram-бот для дешифровки и просмотра конфигурационных файлов **NETCFG** и **MXCFG**.
+Telegram Mini App для дешифровки и просмотра конфигурационных файлов
+**NETCFG** и **MXCFG**.
 
-## Возможности
-
-- 🔓 **Дешифровка** — NETCFG (XOR) и MXCFG (base64 + XOR, перебор ключей)
-- 👁 **Просмотр** — красивое HTML-представление содержимого MXCFG
-- 🛡 Контроль доступа через белый список + администраторы
-- 🧩 Команды администратора: `/adduser`, `/removeuser`, `/users`
-- ⌨️ Подсказки команд в Telegram (`setMyCommands`), отдельный набор для админов
-
-## Требования
-
-- Python 3.10+
-- [`python-telegram-bot`](https://python-telegram-bot.org/) 21.0 или новее
-
-```bash
-pip install -r requirements.txt
+```
+Пользователь в Telegram
+        │
+        ▼
+   /start → кнопка «🚀 Открыть приложение»
+        │
+        ▼
+┌───────────────────┐        ┌──────────────────────┐
+│  Frontend (HTML)  │ ─────▶ │   Backend (FastAPI)  │
+│ Mini App интерфейс│        │ • /api/netcfg/decrypt│
+│ Telegram WebApp   │ ◀───── │ • /api/mxcfg/decrypt │
+│ SDK + fetch       │        │ • /api/mxcfg/view    │
+└───────────────────┘        │ • PTB polling (бот)  │
+                             └──────────────────────┘
 ```
 
-## Запуск
+## Структура репозитория
 
-Токен бота должен задаваться переменной окружения `BOT_TOKEN` — **не храните токены в коде**.
-
-```bash
-export BOT_TOKEN="123456:ABC-..."
-# необязательно — переопределить список администраторов
-export BOT_ADMIN_IDS="111111,222222"
-# необязательно — путь к файлу белого списка
-export WHITELIST_FILE="/var/lib/ai_bot/whitelist.json"
-
-python main.py
+```
+backend/            FastAPI + Telegram-бот (один процесс)
+  app/
+    main.py         FastAPI-приложение и lifespan, запускающий бота
+    bot.py          PTB-бот: /start с WebApp-кнопкой и админ-команды
+    auth.py         Валидация initData (HMAC-SHA256 по токену бота)
+    codec.py        Чистая логика декодирования NETCFG / MXCFG
+    view.py         HTML-рендер разобранного MXCFG
+    access.py       Белый список пользователей / админов
+    config.py       Чтение настроек из env (runtime.env / .env)
+  pyproject.toml    FastAPI + python-telegram-bot 21 + python-dotenv
+frontend/           Статический Mini App
+  index.html        UI + подключение telegram-web-app.js
+  app.js            Логика загрузки файлов и вызовов API
+  styles.css        Оформление с Telegram theme-параметрами
 ```
 
-Либо одной строкой:
+## Переменные окружения (бэкенд)
+
+| Имя              | Назначение                                        |
+| ---------------- | ------------------------------------------------- |
+| `BOT_TOKEN`      | Токен бота от @BotFather **(обязателен)**         |
+| `BOT_ADMIN_IDS`  | ID админов через запятую                          |
+| `FRONTEND_URL`   | URL Mini App (для CORS)                           |
+| `BOT_WEBAPP_URL` | URL Mini App, подставляется в `/start` кнопку     |
+| `CORS_ORIGINS`   | Дополнительные origin-ы через запятую             |
+| `DATA_DIR`       | Куда складывать `whitelist.json` (по умолч. `/data`) |
+| `RUN_BOT`        | `0`, чтобы отключить polling (только API)          |
+| `INIT_DATA_TTL`  | Сколько секунд живёт initData (по умолч. 86400)    |
+| `MAX_FILE_SIZE`  | Лимит upload в байтах (по умолч. 20 МБ)            |
+
+Локальная разработка: положите переменные в `backend/runtime.env` или
+`backend/.env` — их подтянет `python-dotenv` при старте (оба в
+`.gitignore`).
+
+## Локальный запуск
 
 ```bash
-BOT_TOKEN="123456:ABC-..." python main.py
+cd backend
+pip install -e .
+
+# создайте backend/runtime.env с BOT_TOKEN, затем:
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## Переменные окружения
+Frontend — просто откройте `frontend/index.html`, предварительно заменив
+`__BACKEND_URL__` на адрес бэкенда.
 
-| Переменная        | Обязательная | По умолчанию                            | Описание                                           |
-| ----------------- | ------------ | --------------------------------------- | -------------------------------------------------- |
-| `BOT_TOKEN`       | ✅           | —                                       | Токен бота от [@BotFather](https://t.me/BotFather) |
-| `BOT_ADMIN_IDS`   | ❌           | `6903588929,6734219400`                 | Telegram-ID администраторов (через запятую)        |
-| `WHITELIST_FILE`  | ❌           | `whitelist.json` рядом с `main.py`      | Путь к файлу белого списка                         |
+## Настройка в @BotFather
 
-## Команды
+1. `/mybots` → выберите бота → **Bot Settings** → **Menu Button** →
+   **Configure Menu Button**.
+2. Введите URL вашего фронта (например,
+   `https://frontend-nmzphmhl.devinapps.com`).
+3. Задайте название кнопки (например, `🚀 Открыть`).
 
-**Всем пользователям:**
+Теперь в клиенте Telegram рядом с полем ввода появится кнопка, которая
+открывает Mini App.
 
-- `/start` — главное меню
-- `/help` — справка
-- `/myid` — показать Telegram ID
-- `/cancel` — отменить текущее действие
+## Команды бота
 
-**Только администраторам:**
+Публичные:
 
-- `/adduser <id>` — добавить пользователя в белый список
-- `/removeuser <id>` — удалить пользователя
-- `/users` — список администраторов и пользователей
+* `/start` — открыть Mini App
+* `/myid` — показать свой Telegram ID
+
+Админы (добавляются через `BOT_ADMIN_IDS`):
+
+* `/adduser <id>` — добавить пользователя
+* `/removeuser <id>` — убрать пользователя
+* `/users` — список пользователей и админов
 
 ## Безопасность
 
-- Бот отвечает только пользователям из `ADMIN_IDS` или файла белого списка.
-- Токен читается из переменной окружения — не коммитьте его.
-- `whitelist.json` обновляется атомарно под `asyncio.Lock`.
+* Бэкенд проверяет `initData` Mini App по HMAC-SHA256 с секретом `WebAppData`
+  и токеном бота; без валидной подписи все API-ручки отвечают `401`.
+* Пользователь не в белом списке получает `403`.
+* `BOT_TOKEN` никогда не коммитится — только в `runtime.env` на сервере
+  либо как переменная окружения.
