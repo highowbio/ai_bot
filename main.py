@@ -21,9 +21,13 @@ from telegram import (  # noqa: E402
     Chat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
     Update,
     User,
+    WebAppInfo,
 )
 from telegram.error import BadRequest  # noqa: E402
 from telegram.ext import (  # noqa: E402
@@ -66,6 +70,7 @@ ADMIN_IDS: set[int] = _parse_admin_ids(os.environ.get("ADMIN_IDS", ""))
 WHITELIST_FILE = Path(os.environ.get("WHITELIST_FILE", BASE_DIR / "whitelist.json"))
 PERSISTENCE_FILE = Path(os.environ.get("PERSISTENCE_FILE", BASE_DIR / "bot_persistence.pickle"))
 MAX_FILE_SIZE = int(os.environ.get("MAX_FILE_SIZE_MB", "20")) * 1024 * 1024
+WEBAPP_URL = os.environ.get("WEBAPP_URL", "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +141,55 @@ def _set_mode(context: ContextTypes.DEFAULT_TYPE, mode: str | None) -> None:
 def _reset_state(context: ContextTypes.DEFAULT_TYPE) -> None:
     _set_action(context, None)
     _set_mode(context, None)
+
+
+# ---------------------------------------------------------------------------
+# Stats (stored in context.bot_data, persisted via PicklePersistence)
+# ---------------------------------------------------------------------------
+
+_STATS_KEY = "stats"
+_STAT_COUNTERS = ("decrypt_netcfg", "decrypt_mxcfg", "view_mxcfg")
+
+
+def _ensure_stats(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    bot_data = context.bot_data
+    stats = bot_data.get(_STATS_KEY)
+    if not isinstance(stats, dict):
+        stats = {}
+        bot_data[_STATS_KEY] = stats
+    for counter in _STAT_COUNTERS:
+        stats.setdefault(counter, 0)
+    if not isinstance(stats.get("per_user"), dict):
+        stats["per_user"] = {}
+    return stats
+
+
+def _bump_stat(context: ContextTypes.DEFAULT_TYPE, counter: str, uid: int) -> None:
+    stats = _ensure_stats(context)
+    stats[counter] = int(stats.get(counter, 0)) + 1
+    per_user = stats["per_user"]
+    per_user[uid] = int(per_user.get(uid, 0)) + 1
+
+
+def _format_stats(context: ContextTypes.DEFAULT_TYPE) -> str:
+    stats = _ensure_stats(context)
+    total = sum(int(stats.get(c, 0)) for c in _STAT_COUNTERS)
+
+    lines = ["<b>📊 Статистика</b>", ""]
+    lines.append(f"Всего операций: <b>{total}</b>")
+    lines.append(f"  🔓 NETCFG расшифровано: <b>{stats.get('decrypt_netcfg', 0)}</b>")
+    lines.append(f"  🔓 MXCFG расшифровано: <b>{stats.get('decrypt_mxcfg', 0)}</b>")
+    lines.append(f"  👁 MXCFG просмотров: <b>{stats.get('view_mxcfg', 0)}</b>")
+
+    per_user: dict[int, int] = stats.get("per_user", {})
+    if per_user:
+        top = sorted(per_user.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        lines += ["", "<b>Топ-5 пользователей:</b>"]
+        for i, (u, count) in enumerate(top, 1):
+            lines.append(f"  {i}. <code>{u}</code> — {count}")
+
+    lines += ["", f"Админов: {len(ADMIN_IDS)}", f"В whitelist: {len(whitelist)}"]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +345,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if is_admin(uid):
         text += (
             "\n<b>🔧 Команды администратора:</b>\n"
+            "/admin             — открыть Mini App админ-панель\n"
+            "/stats             — статистика\n"
+            "/users             — список пользователей\n"
             "/adduser &lt;id&gt;    — добавить пользователя\n"
             "/removeuser &lt;id&gt; — удалить пользователя\n"
-            "/users             — список пользователей\n"
+            "/close             — закрыть клавиатуру Mini App\n"
         )
 
     await message.reply_text(text, parse_mode="HTML")
@@ -324,13 +381,50 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+def _admin_add_user(target: int, requested_by: int) -> str:
+    """Add ``target`` to the whitelist. Returns an HTML-formatted result string."""
+    if target in ADMIN_IDS:
+        return "ℹ️ Этот пользователь уже администратор."
+    if target in whitelist:
+        return f"ℹ️ Пользователь <code>{target}</code> уже в списке."
+    whitelist.add(target)
+    _save_whitelist(whitelist)
+    logger.info("Admin %s added user %s", requested_by, target)
+    return f"✅ Пользователь <code>{target}</code> добавлен."
+
+
+def _admin_remove_user(target: int, requested_by: int) -> str:
+    """Remove ``target`` from the whitelist. Returns an HTML-formatted result string."""
+    if target in ADMIN_IDS:
+        return "⛔ Нельзя удалить администратора."
+    if target not in whitelist:
+        return f"ℹ️ Пользователь <code>{target}</code> не найден."
+    whitelist.discard(target)
+    _save_whitelist(whitelist)
+    logger.info("Admin %s removed user %s", requested_by, target)
+    return f"✅ Пользователь <code>{target}</code> удалён."
+
+
+def _format_users() -> str:
+    lines = ["<b>👑 Администраторы:</b>"]
+    for i, aid in enumerate(sorted(ADMIN_IDS), 1):
+        lines.append(f"  {i}. <code>{aid}</code>")
+
+    if whitelist:
+        lines += ["", "<b>📋 Пользователи с доступом:</b>"]
+        for i, wuid in enumerate(sorted(whitelist), 1):
+            lines.append(f"  {i}. <code>{wuid}</code>")
+    else:
+        lines += ["", "📋 Белый список пуст."]
+    return "\n".join(lines)
+
+
 async def cmd_adduser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ctx = _require_msg_user(update)
     if ctx is None:
         return
     message, user = ctx
-    uid = user.id
-    if not is_admin(uid):
+    if not is_admin(user.id):
         await message.reply_text("⛔ Только для администраторов.")
         return
 
@@ -342,24 +436,8 @@ async def cmd_adduser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         return
 
-    target = int(args[0])
-    if target in ADMIN_IDS:
-        await message.reply_text("ℹ️ Этот пользователь уже администратор.")
-        return
-    if target in whitelist:
-        await message.reply_text(
-            f"ℹ️ Пользователь <code>{target}</code> уже в списке.",
-            parse_mode="HTML",
-        )
-        return
-
-    whitelist.add(target)
-    _save_whitelist(whitelist)
-    logger.info("Admin %s added user %s", uid, target)
-    await message.reply_text(
-        f"✅ Пользователь <code>{target}</code> добавлен.",
-        parse_mode="HTML",
-    )
+    response = _admin_add_user(int(args[0]), user.id)
+    await message.reply_text(response, parse_mode="HTML")
 
 
 async def cmd_removeuser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -367,8 +445,7 @@ async def cmd_removeuser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if ctx is None:
         return
     message, user = ctx
-    uid = user.id
-    if not is_admin(uid):
+    if not is_admin(user.id):
         await message.reply_text("⛔ Только для администраторов.")
         return
 
@@ -380,24 +457,8 @@ async def cmd_removeuser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    target = int(args[0])
-    if target in ADMIN_IDS:
-        await message.reply_text("⛔ Нельзя удалить администратора.")
-        return
-    if target not in whitelist:
-        await message.reply_text(
-            f"ℹ️ Пользователь <code>{target}</code> не найден.",
-            parse_mode="HTML",
-        )
-        return
-
-    whitelist.discard(target)
-    _save_whitelist(whitelist)
-    logger.info("Admin %s removed user %s", uid, target)
-    await message.reply_text(
-        f"✅ Пользователь <code>{target}</code> удалён.",
-        parse_mode="HTML",
-    )
+    response = _admin_remove_user(int(args[0]), user.id)
+    await message.reply_text(response, parse_mode="HTML")
 
 
 async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -408,6 +469,57 @@ async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(user.id):
         await message.reply_text("⛔ Только для администраторов.")
         return
+    await message.reply_text(_format_users(), parse_mode="HTML")
+
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx = _require_msg_user(update)
+    if ctx is None:
+        return
+    message, user = ctx
+    if not is_admin(user.id):
+        await message.reply_text("⛔ Только для администраторов.")
+        return
+    await message.reply_text(_format_stats(context), parse_mode="HTML")
+
+
+async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open the Mini App admin panel via a reply-keyboard Web App button."""
+    ctx = _require_msg_user(update)
+    if ctx is None:
+        return
+    message, user = ctx
+    if not is_admin(user.id):
+        await message.reply_text("⛔ Только для администраторов.")
+        return
+
+    if not WEBAPP_URL:
+        await message.reply_text(
+            "⚠️ Mini App не настроена: переменная <code>WEBAPP_URL</code> не задана.\n"
+            "Пока используй команды <code>/users</code>, <code>/stats</code>, "
+            "<code>/adduser</code>, <code>/removeuser</code>.",
+            parse_mode="HTML",
+        )
+        return
+
+    kb = ReplyKeyboardMarkup(
+        [[KeyboardButton("🔧 Открыть админ-панель", web_app=WebAppInfo(url=WEBAPP_URL))]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+    await message.reply_text(
+        "Нажми кнопку ниже, чтобы открыть админ-панель:",
+        reply_markup=kb,
+    )
+
+
+async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hide the reply keyboard that was shown by /admin."""
+    ctx = _require_msg_user(update)
+    if ctx is None:
+        return
+    message, _ = ctx
+    await message.reply_text("Закрыто.", reply_markup=ReplyKeyboardRemove())
 
     lines = ["<b>👑 Администраторы:</b>"]
     for i, aid in enumerate(sorted(ADMIN_IDS), 1):
@@ -591,6 +703,7 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         caption = "ℹ️ Файл уже был расшифрован." if status == "already" else "✅ Файл расшифрован."
         await send_file(result, f"decoded_{original_name}", caption)
+        _bump_stat(context, "decrypt_netcfg", uid)
         _reset_state(context)
         return
 
@@ -609,6 +722,7 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         caption = "ℹ️ Файл уже был расшифрован." if status == "already" else "✅ Файл расшифрован."
         await send_file(result, f"decoded_{original_name}", caption)
+        _bump_stat(context, "decrypt_mxcfg", uid)
         _reset_state(context)
         return
 
@@ -634,6 +748,7 @@ async def on_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             pretty = f"<pre>{escaped}</pre>"
 
         await send_long_text(update, context, pretty)
+        _bump_stat(context, "view_mxcfg", uid)
         _reset_state(context)
         return
 
@@ -670,6 +785,58 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "👋 Нажми /start чтобы начать.",
             reply_markup=kb_main(),
         )
+
+
+async def on_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle JSON payloads sent from the Mini App via ``Telegram.WebApp.sendData``."""
+    ctx = _require_msg_user(update)
+    if ctx is None:
+        return
+    message, user = ctx
+
+    if not is_admin(user.id):
+        await message.reply_text("⛔ Mini App доступна только администраторам.")
+        return
+
+    web_app_data = message.web_app_data
+    if web_app_data is None:
+        return
+
+    raw_payload = web_app_data.data or ""
+    try:
+        payload = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        logger.warning("Invalid Mini App payload from %s: %r", user.id, raw_payload)
+        await message.reply_text("❌ Невалидные данные от Mini App.")
+        return
+
+    op = payload.get("op") if isinstance(payload, dict) else None
+
+    if op == "stats":
+        await message.reply_text(_format_stats(context), parse_mode="HTML")
+        return
+
+    if op == "list":
+        await message.reply_text(_format_users(), parse_mode="HTML")
+        return
+
+    if op in ("add", "remove"):
+        target_raw = payload.get("id")
+        try:
+            target = int(target_raw)
+        except (TypeError, ValueError):
+            await message.reply_text("❌ Не передан корректный Telegram ID.")
+            return
+
+        if op == "add":
+            response = _admin_add_user(target, user.id)
+        else:
+            response = _admin_remove_user(target, user.id)
+        await message.reply_text(response, parse_mode="HTML")
+        return
+
+    logger.warning("Unknown Mini App op=%r from %s", op, user.id)
+    await message.reply_text(f"❌ Неизвестная операция: <code>{op}</code>.", parse_mode="HTML")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -718,7 +885,11 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("adduser", cmd_adduser))
     app.add_handler(CommandHandler("removeuser", cmd_removeuser))
     app.add_handler(CommandHandler("users", cmd_users))
+    app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("close", cmd_close))
     app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, on_web_app_data))
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_error_handler(error_handler)

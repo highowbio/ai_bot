@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>ai_bot — Админ-панель</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <h1>🔧 Админ-панель</h1>
+      <p class="subtitle" id="user-info">Загрузка...</p>
+    </header>
+
+    <section class="card" aria-labelledby="stats-heading">
+      <h2 id="stats-heading">📊 Статистика</h2>
+      <p class="hint">
+        Показать сводку по всем операциям и топ-5 пользователей.
+      </p>
+      <button type="button" class="btn btn-primary" data-op="stats">
+        Показать статистику
+      </button>
+    </section>
+
+    <section class="card" aria-labelledby="list-heading">
+      <h2 id="list-heading">👥 Список пользователей</h2>
+      <p class="hint">
+        Показать админов и юзеров в whitelist.
+      </p>
+      <button type="button" class="btn btn-primary" data-op="list">
+        Показать whitelist
+      </button>
+    </section>
+
+    <section class="card" aria-labelledby="add-heading">
+      <h2 id="add-heading">➕ Добавить пользователя</h2>
+      <label class="field">
+        <span>Telegram ID</span>
+        <input
+          type="number"
+          inputmode="numeric"
+          pattern="-?\d+"
+          placeholder="например, 123456789"
+          id="add-input"
+          autocomplete="off"
+        >
+      </label>
+      <button type="button" class="btn btn-success" data-op="add">
+        Добавить в whitelist
+      </button>
+    </section>
+
+    <section class="card" aria-labelledby="remove-heading">
+      <h2 id="remove-heading">❌ Удалить пользователя</h2>
+      <label class="field">
+        <span>Telegram ID</span>
+        <input
+          type="number"
+          inputmode="numeric"
+          pattern="-?\d+"
+          placeholder="например, 123456789"
+          id="remove-input"
+          autocomplete="off"
+        >
+      </label>
+      <button type="button" class="btn btn-danger" data-op="remove">
+        Удалить из whitelist
+      </button>
+    </section>
+
+    <p class="footer-note">
+      Все операции выполняются ботом — результат появится в чате после закрытия.
+    </p>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
