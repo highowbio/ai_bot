@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -823,7 +824,8 @@ async def on_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     logger.warning("Unknown Mini App op=%r from %s", op, user.id)
-    await message.reply_text(f"❌ Неизвестная операция: <code>{op}</code>.", parse_mode="HTML")
+    op_safe = html.escape(str(op))
+    await message.reply_text(f"❌ Неизвестная операция: <code>{op_safe}</code>.", parse_mode="HTML")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
