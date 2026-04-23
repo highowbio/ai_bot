@@ -9,7 +9,14 @@ import os
 from io import BytesIO
 from pathlib import Path
 
-from telegram import (
+from dotenv import load_dotenv
+
+# Load ``.env`` before any module-level ``os.environ`` reads below so that
+# ``python main.py`` works out of the box (Docker injects env vars via
+# ``env_file`` in docker-compose.yml so this is effectively a no-op there).
+load_dotenv()
+
+from telegram import (  # noqa: E402
     CallbackQuery,
     Chat,
     InlineKeyboardButton,
@@ -18,8 +25,8 @@ from telegram import (
     Update,
     User,
 )
-from telegram.error import BadRequest
-from telegram.ext import (
+from telegram.error import BadRequest  # noqa: E402
+from telegram.ext import (  # noqa: E402
     Application,
     CallbackQueryHandler,
     CommandHandler,
@@ -29,8 +36,8 @@ from telegram.ext import (
     filters,
 )
 
-from crypto import decode_mxcfg_bytes, decode_netcfg
-from view import pretty_mxcfg_view
+from crypto import decode_mxcfg_bytes, decode_netcfg  # noqa: E402
+from view import pretty_mxcfg_view  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
