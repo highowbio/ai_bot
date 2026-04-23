@@ -1,0 +1,19 @@
+[project]
+name = "ai-bot-miniapp-backend"
+version = "0.1.0"
+description = "Backend for the ai_bot Telegram Mini App"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-telegram-bot>=21.0",
+    "python-multipart>=0.0.12",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

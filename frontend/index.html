@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1113" />
+  <title>AI Bot · декодер конфигов</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    // Injected at deploy time with the backend URL. Falls back to same origin
+    // when empty (useful for local dev with a reverse proxy).
+    window.BACKEND_URL = "https://ai-bot-miniapp-backen-fiorcvkt.fly.dev";
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="app">
+    <header class="app-header">
+      <div class="logo">🛠</div>
+      <div>
+        <h1>AI Bot</h1>
+        <p class="subtitle">декодер NETCFG / MXCFG</p>
+      </div>
+    </header>
+
+    <section id="screen-home" class="screen active">
+      <h2>Что сделать?</h2>
+      <div class="card-list">
+        <button class="card" data-action="decrypt" type="button">
+          <div class="card-icon">🔓</div>
+          <div class="card-body">
+            <div class="card-title">Дешифровать</div>
+            <div class="card-desc">NETCFG или MXCFG → исходный файл</div>
+          </div>
+          <div class="card-chevron">›</div>
+        </button>
+        <button class="card" data-action="view" type="button">
+          <div class="card-icon">👁</div>
+          <div class="card-body">
+            <div class="card-title">Просмотр</div>
+            <div class="card-desc">MXCFG → структурированная карточка</div>
+          </div>
+          <div class="card-chevron">›</div>
+        </button>
+      </div>
+    </section>
+
+    <section id="screen-type" class="screen">
+      <h2 id="type-title">Выбери тип файла</h2>
+      <div class="card-list" id="type-list"></div>
+    </section>
+
+    <section id="screen-upload" class="screen">
+      <h2 id="upload-title">Загрузи файл</h2>
+      <p class="hint" id="upload-hint">Максимальный размер — 20 МБ</p>
+      <label class="uploader">
+        <input type="file" id="file-input" />
+        <div class="uploader-body">
+          <div class="uploader-icon">📎</div>
+          <div class="uploader-title">Нажми, чтобы выбрать файл</div>
+          <div class="uploader-hint">или перетащи сюда</div>
+        </div>
+      </label>
+      <div id="selected-file" class="selected-file hidden"></div>
+      <div class="button-row">
+        <button id="btn-process" class="btn-primary" disabled type="button">
+          ⚙ Обработать
+        </button>
+      </div>
+    </section>
+
+    <section id="screen-loading" class="screen screen-center">
+      <div class="spinner"></div>
+      <p class="muted">Обрабатываю файл…</p>
+    </section>
+
+    <section id="screen-result" class="screen">
+      <h2 id="result-title">Готово</h2>
+      <div id="result-body"></div>
+      <div class="button-row">
+        <button id="btn-download" class="btn-primary hidden" type="button">
+          ⬇ Скачать
+        </button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
