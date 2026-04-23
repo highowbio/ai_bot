@@ -521,19 +521,6 @@ async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message, _ = ctx
     await message.reply_text("Закрыто.", reply_markup=ReplyKeyboardRemove())
 
-    lines = ["<b>👑 Администраторы:</b>"]
-    for i, aid in enumerate(sorted(ADMIN_IDS), 1):
-        lines.append(f"  {i}. <code>{aid}</code>")
-
-    if whitelist:
-        lines += ["", "<b>📋 Пользователи с доступом:</b>"]
-        for i, wuid in enumerate(sorted(whitelist), 1):
-            lines.append(f"  {i}. <code>{wuid}</code>")
-    else:
-        lines += ["", "📋 Белый список пуст."]
-
-    await message.reply_text("\n".join(lines), parse_mode="HTML")
-
 
 # ---------------------------------------------------------------------------
 # Callbacks and messages
